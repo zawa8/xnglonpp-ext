@@ -40,6 +40,25 @@ int main() {
   expect_eq("u38(नमस्ते)", to_u38("नमस्ते"), "नमसतe");
   expect_eq("u38(अनार)", to_u38("अनार"), "अनaर");
 
+  // xi38, other 5 scripts -- reusing the same smoke-test strings verified
+  // against htrlib directly when each uN_map.ts was populated there.
+  expect_eq("xi38 gurmukhi(ਸਤ ਸ੍ਰੀ ਅਕਾਲ ਪੰਜਾਬ)",
+            to_xi38("ਸਤ ਸ੍ਰੀ ਅਕਾਲ ਪੰਜਾਬ"), "sT sri Akal pnzab");
+  expect_eq("xi38 gujarati(કેમ છો ગુજરાત)",
+            to_xi38("કેમ છો ગુજરાત"), "kem Co guzraT");
+  // ओडिशा with the PRECOMPOSED nukta ଡ଼ (U+0B5C) -- decomposed nukta isn't
+  // composed for any script but devanagari yet, see CLAUDE.md.
+  expect_eq("xi38 oriya(ଓ\u0B5Cିଶା, precomposed nukta)",
+            to_xi38("ଓ\u0B5Cିଶା"), "oRiSa");
+  expect_eq("xi38 kannada(ನಮಸ್ಕಾರ ಕನ್ನಡ)",
+            to_xi38("ನಮಸ್ಕಾರ ಕನ್ನಡ"), "nmskar knnd");
+  expect_eq("xi38 sinhala(ආයුබෝවන්)", to_xi38("ආයුබෝවන්"), "Aayubown");
+
+  // u38, gurmukhi -- ISCII-aligned, so the generic letter/mark split in
+  // to_u38() should apply the same way it does for devanagari.
+  expect_eq("u38 gurmukhi(ਸਤ)", to_u38("ਸਤ"), "ਸਤ"); // no marks, letters untouched
+  expect_eq("u38 sinhala passthrough(ආයුබෝවන්)", to_u38("ආයුබෝවන්"), "ආයුබෝවන්");
+
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
     return 1;

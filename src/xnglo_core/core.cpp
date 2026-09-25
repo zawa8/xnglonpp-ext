@@ -1,6 +1,12 @@
 #include "core.h"
 #include "u1_map.h"
+#include "u3_map.h"
+#include "u4_map.h"
+#include "u5_map.h"
+#include "u8_map.h"
+#include "u10_map.h"
 
+#include <array>
 #include <regex>
 #include <vector>
 
@@ -8,10 +14,6 @@ namespace xnglo {
 namespace {
 
 // ---- minimal UTF-8 <-> UTF-32 codepoint helpers -----------------------
-// (devanagari is entirely in the 3-byte UTF-8 range; this only needs to
-// handle 1..3 byte sequences correctly, but decodes 4-byte ones too so
-// it doesn't corrupt astral-plane input it passes through unchanged.)
-
 std::vector<char32_t> utf8_decode(const std::string& s) {
   std::vector<char32_t> out;
   size_t i = 0, n = s.size();
@@ -23,8 +25,8 @@ std::vector<char32_t> utf8_decode(const std::string& s) {
     else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
     else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
     else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
-    else { out.push_back(c); ++i; continue; } // invalid lead byte, passthrough raw
-    if (i + len > n) { out.push_back(c); ++i; continue; } // truncated, passthrough raw
+    else { out.push_back(c); ++i; continue; }
+    if (i + len > n) { out.push_back(c); ++i; continue; }
     bool ok = true;
     for (size_t k = 1; k < len; ++k) {
       unsigned char cc = static_cast<unsigned char>(s[i + k]);
@@ -56,11 +58,45 @@ void utf8_append(std::string& out, char32_t cp) {
   }
 }
 
-// ---- devanagari-specific preprocessing (ported from u10_to_xi52.ts) ---
+// ---- script registry ---------------------------------------------------
+// `iscii_aligned` marks whether the script shares devanagari's ISCII
+// layout closely enough that to_u38()'s generic letter/mark range check
+// applies -- true for the 5 non-sinhala scripts here; sinhala genuinely
+// diverges (extra independent vowels shift everything after them -- see
+// u10_map.h's own htrlib source note) so to_u38() doesn't support it.
+struct ScriptTable {
+  int base;
+  int virama_offset;
+  bool iscii_aligned;
+  const std::array<std::string, 128>& map;
+};
 
-// Composes the 8 nukta consonants (क़ ख़ ग़ ज़ ड़ ढ़ फ़ य़) when the input
-// gives them as decomposed base-letter + U+093C (not a canonical Unicode
-// decomposition, so normalize('NFC') can't do this -- has to be by hand).
+const std::array<ScriptTable, 6>& scripts() {
+  static const std::array<ScriptTable, 6> table = { {
+    { kBlockBase,      kViramaOffset,        true,  u1_map()  },
+    { kGurmukhiBase,   kGurmukhiViramaOffset, true,  u3_map()  },
+    { kGujaratiBase,   kGujaratiViramaOffset, true,  u4_map()  },
+    { kOriyaBase,      kOriyaViramaOffset,    true,  u5_map()  },
+    { kKannadaBase,    kKannadaViramaOffset,  true,  u8_map()  },
+    { kSinhalaBase,    kSinhalaViramaOffset,  false, u10_map() },
+  } };
+  return table;
+}
+
+const ScriptTable* table_for(char32_t cp) {
+  for (const auto& t : scripts()) {
+    if (cp >= static_cast<char32_t>(t.base) && cp < static_cast<char32_t>(t.base) + 128) {
+      return &t;
+    }
+  }
+  return nullptr;
+}
+
+// ---- devanagari-specific preprocessing (ported from u10_to_xi52.ts) ---
+// Both of these only ever match literal devanagari codepoints, so they're
+// safe (no-ops) on input from any other script -- but that also means
+// they DON'T do the equivalent cleanup for the other 5 scripts' own
+// nukta/malformed-vowel-matra quirks yet. See CLAUDE.md.
 void compose_nukta(std::vector<char32_t>& cps) {
   static const std::vector<std::pair<char32_t, char32_t>> pairs = {
     {0x0915, 0x0958}, {0x0916, 0x0959}, {0x0917, 0x095A}, {0x091C, 0x095B},
@@ -81,27 +117,19 @@ void compose_nukta(std::vector<char32_t>& cps) {
   cps = std::move(out);
 }
 
-// An independent vowel letter (U+0904-U+0914) directly followed by a
-// dependent matra (U+093E-U+094C) is malformed -- a matra only attaches
-// to a consonant -- and in practice is someone typing an extra vowel
-// letter by mistake right before the matra they meant. Drop the
-// spurious independent vowel, keep the matra.
 void drop_malformed_vowel_matra(std::vector<char32_t>& cps) {
   std::vector<char32_t> out;
   out.reserve(cps.size());
   for (size_t i = 0; i < cps.size(); ++i) {
     if (cps[i] >= 0x0904 && cps[i] <= 0x0914 &&
         i + 1 < cps.size() && cps[i + 1] >= 0x093E && cps[i + 1] <= 0x094C) {
-      continue; // drop this one, the matra right after it gets pushed next iteration
+      continue;
     }
     out.push_back(cps[i]);
   }
   cps = std::move(out);
 }
 
-// क्ष -> s, ज्ञ -> gy (whole-conjunct special cases, ported as-is).
-// Operates on the UTF-8 string before the main per-codepoint loop,
-// same as u10_to_xi52.ts does.
 std::string apply_conjunct_specials(const std::string& utf8) {
   static const std::regex kshaWordStart("^\u0915\u094D\u0937");
   static const std::regex kshaMid("(\\W)\u0915\u094D\u0937");
@@ -113,9 +141,7 @@ std::string apply_conjunct_specials(const std::string& utf8) {
 }
 
 // ---- postprocessing, ported from xnglo_post.ts's xnglo_india_post() ---
-// Only used by to_xi38(); to_u38() intentionally skips this (matches
-// htrlib's unicode_india_to_u38(), which returns the raw per-character
-// result unprocessed).
+// Only used by to_xi38(); to_u38() intentionally skips this.
 std::string xnglo_india_post(const std::string& in) {
   std::string s = in;
   s = std::regex_replace(s, std::regex("^#S"), "S");
@@ -152,11 +178,11 @@ std::string to_xi38(const std::string& utf8_input) {
   drop_malformed_vowel_matra(cps);
   compose_nukta(cps);
 
-  const auto& map = u1_map();
   std::string out;
   for (char32_t cp : cps) {
-    if (cp >= kBlockBase && cp < kBlockBase + 128) {
-      out += map[cp - kBlockBase];
+    const ScriptTable* t = table_for(cp);
+    if (t) {
+      out += t->map[cp - t->base];
     } else {
       utf8_append(out, cp);
     }
@@ -171,29 +197,23 @@ std::string to_u38(const std::string& utf8_input) {
   drop_malformed_vowel_matra(cps);
   compose_nukta(cps);
 
-  const auto& map = u1_map();
   std::string out;
   for (char32_t cp : cps) {
-    if (cp < kBlockBase || cp >= kBlockBase + 128) {
+    const ScriptTable* t = table_for(cp);
+    if (!t || !t->iscii_aligned) {
       utf8_append(out, cp);
       continue;
     }
-    int offset = static_cast<int>(cp - kBlockBase);
-    if (offset == kViramaOffset) continue; // drop virama entirely
-    // "Letter" here means: devanagari LETTER category (independent
-    // vowels 0x04-0x14, consonants 0x15-0x39 roughly, nukta consonants
-    // 0x58-0x5f) as opposed to combining marks (matras, anusvara,
-    // candrabindu, visarga, nukta sign itself). Mirrors JS's \p{L} test
-    // in htrlib's unicode_india_to_u38(), done here as an explicit
-    // codepoint-range check since std::regex has no \p{L}.
+    int offset = static_cast<int>(cp) - t->base;
+    if (offset == t->virama_offset) continue;
     bool is_letter =
-        (cp >= 0x0904 && cp <= 0x0939) ||             // independent vowels..ह
-        (cp >= 0x0958 && cp <= 0x0961) ||              // nukta letters + ॠॡ
-        cp == 0x097F;                                  // (rare extra letter)
+        (offset >= 0x04 && offset <= 0x39) ||
+        (offset >= 0x58 && offset <= 0x61) ||
+        offset == 0x7F;
     if (is_letter) {
       utf8_append(out, cp);
     } else {
-      out += map[offset];
+      out += t->map[offset];
     }
   }
   return out;

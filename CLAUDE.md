@@ -1,7 +1,11 @@
 # htr-xnglo Notepad++ plugin (xnglonpp-ext)
 
 Transliterates selected text in Notepad++ using htrlib's xnglo scheme
-(https://github.com/zawa8/htrlib). Two menu commands:
+(https://github.com/zawa8/htrlib). Supports 6 scripts so far: devanagari,
+gurmukhi (punjabi), gujarati, oriya, kannada, sinhala -- see "What's NOT
+done yet" for the other 4 (bengali, tamil, telugu, malayalam), which
+htrlib itself doesn't have verified per-script data for yet either. Two
+menu commands:
 - "Transliterate selection -> xi38 (full romanization)" -- e.g. नमस्ते -> nmsTe
 - "Transliterate selection -> u38 (keep native letters)" -- e.g. नमस्ते -> नमसतe
   (letters stay native-script, only matras/marks convert, virama drops)
@@ -9,9 +13,16 @@ Transliterates selected text in Notepad++ using htrlib's xnglo scheme
 ## Layout
 - `src/xnglo_core/` -- platform-independent C++ (no Win32/Notepad++
   dependency). Hand-ported from htrlib's TypeScript (`src/hsciistr/
-  u10_to_xi52.ts` + `xnglo_post.ts`), **devanagari (u1_map) only so far**.
-  Builds and runs with a bare `g++` on any platform, including this
-  repo's Linux sandbox -- see `tests/`.
+  u10_to_xi52.ts` + `xnglo_post.ts`). 6 scripts ported: devanagari
+  (`u1_map.h`), gurmukhi (`u3_map.h`), gujarati (`u4_map.h`), oriya
+  (`u5_map.h`), kannada (`u8_map.h`), sinhala (`u10_map.h`) -- the ones
+  htrlib itself has verified per-script data for. Dispatch across them
+  lives in `core.cpp`'s `ScriptTable`/`scripts()`/`table_for()`.
+  `to_u38()` (semi-transliteration) only supports the 5 ISCII-aligned
+  ones (not sinhala, which doesn't share devanagari's letter/mark offset
+  layout -- see `ScriptTable::iscii_aligned`). Builds and runs with a
+  bare `g++` on any platform, including this repo's Linux sandbox -- see
+  `tests/`.
 - `src/npp_plugin/` -- Win32 + Notepad++ Plugin API glue (menu
   registration, reading/replacing the Scintilla selection, DLL exports).
   Based on the structure of Notepad++'s official plugin template
@@ -38,12 +49,22 @@ Visual Studio + the Notepad++ plugin template project settings (link
 matching the target Notepad++ build). Not attempted here.
 
 ## What's NOT done yet
-- Only devanagari (u1_map) is ported to `xnglo_core` -- htrlib has 9 more
-  scripts (u2..u10). Porting another script means: pulling that script's
-  `uN_map.ts` array out of htrlib (see how `u1_map.h` was generated --
-  it's a straight literal copy, script by script, same as the other
-  9 language repos' maps were hand-verified one at a time) and adding a
-  per-script dispatch in `core.cpp` (mirroring htrlib's `LI_TO_MAP`).
+- 4 scripts still unported: bengali, tamil, telugu, malayalam -- htrlib
+  itself doesn't have verified per-script data for these yet (its
+  u2/u6/u7/u9_map.ts are still Devanagari-derived placeholders), so
+  there's nothing correct to port until that happens there first. Adding
+  one once it is: pull that script's `uN_map.ts` array out of htrlib
+  (same way `u1_map.h`/`u3_map.h`/etc were generated -- a straight
+  literal copy of the raw value array) into a new header, add its
+  `kXBase`/`kXViramaOffset` constants and an entry in `core.cpp`'s
+  `scripts()` table.
+- `compose_nukta()` and `drop_malformed_vowel_matra()` in `core.cpp` are
+  still devanagari-only (match literal devanagari codepoints) -- they're
+  harmless no-ops on the other 5 scripts' text, but don't do the
+  equivalent cleanup for THEIR nukta-decomposition or malformed-vowel-
+  matra quirks. `oriya`'s test above uses the precomposed nukta form for
+  exactly this reason (decomposed ଡ଼ currently reads as plain ଡ, same
+  class of bug documented in htrlib's own u5_map.ts commit history).
 - No keyboard shortcuts assigned to the two menu commands
   (`_pShKey = nullptr` in `PluginDefinition.cpp`) -- add a `ShortcutKey`
   struct there if wanted.
