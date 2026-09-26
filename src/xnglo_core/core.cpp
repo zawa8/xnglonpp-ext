@@ -131,9 +131,15 @@ void drop_malformed_vowel_matra(std::vector<char32_t>& cps) {
 }
 
 std::string apply_conjunct_specials(const std::string& utf8) {
-  static const std::regex kshaWordStart("^\u0915\u094D\u0937");
-  static const std::regex kshaMid("(\\W)\u0915\u094D\u0937");
-  static const std::regex gya("\u091C\u094D\u091E");
+  // Written as literal UTF-8 bytes (क्ष / ज्ञ), not \u escapes -- \u
+  // inside a narrow "..." string literal is compiler-dependent (g++
+  // encodes it as UTF-8; MSVC treats it as needing to fit the single-byte
+  // execution charset and errors under /WX). This source file is UTF-8;
+  // /utf-8 (or /source-charset:utf-8) must be passed to MSVC for these
+  // literal bytes to be read correctly -- see the .vcxproj.
+  static const std::regex kshaWordStart("^क्ष");
+  static const std::regex kshaMid("(\\W)क्ष");
+  static const std::regex gya("ज्ञ");
   std::string s = std::regex_replace(utf8, kshaWordStart, "s");
   s = std::regex_replace(s, kshaMid, "$1s");
   s = std::regex_replace(s, gya, "gy");
