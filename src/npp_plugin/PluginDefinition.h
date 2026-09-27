@@ -12,7 +12,7 @@
 void setNppData(NppData notepadPlusData);
 
 // Called from dllmain.cpp's getFuncsArray export.
-FuncItem* getFuncsArray(int* nbF);
+FuncItem* buildFuncsArray(int* nbF);
 
 // Menu command callbacks (registered in getFuncsArray's table in
 // PluginDefinition.cpp). Each replaces the current Scintilla selection

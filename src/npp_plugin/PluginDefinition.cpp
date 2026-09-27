@@ -72,7 +72,7 @@ void setNppData(NppData notepadPlusData) { g_nppData = notepadPlusData; }
 void menu_transliterate_xi38() { transliterate_selection(xnglo::to_xi38); }
 void menu_transliterate_u38() { transliterate_selection(xnglo::to_u38); }
 
-FuncItem* getFuncsArray(int* nbF) {
+FuncItem* buildFuncsArray(int* nbF) {
   lstrcpy(g_funcItems[0]._itemName, TEXT("Transliterate selection -> xi38 (full romanization)"));
   g_funcItems[0]._pFunc = menu_transliterate_xi38;
   g_funcItems[0]._init2Check = false;

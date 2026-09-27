@@ -26,7 +26,7 @@ extern "C" __declspec(dllexport) const TCHAR* getName() {
 }
 
 extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* nbF) {
-  return ::getFuncsArray(nbF);
+  return buildFuncsArray(nbF);
 }
 
 extern "C" __declspec(dllexport) void beNotified(SCNotification* /*notifyCode*/) {
