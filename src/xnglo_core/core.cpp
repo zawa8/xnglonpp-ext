@@ -213,27 +213,38 @@ std::string to_u38(const std::string& utf8_input) {
     }
     int offset = static_cast<int>(cp) - t->base;
     if (offset == t->virama_offset) continue;
-    // Anusvara/candrabindu (offsets 0x01/0x02) are marks whose OWN xi38
-    // value ("N") only makes sense in context of what follows -- xi38's
-    // postprocessing (xnglo_india_post's N$/N(\W)/N(?![kKgG]) rules)
-    // handles this on the ROMANIZED string; u38 has no such string to
-    // regex over (the next letter is still native-script), so it's
-    // done here instead by peeking at the next codepoint directly:
-    // dropped at a word boundary, "N" before a velar consonant, "m"
-    // before a labial, "n" otherwise. Matches xi38's behavior on the
-    // repo owner's example (anusvara before a space vanishes; "n" for
-    // meN -> "n"/"" elsewhere).
+    // Anusvara/candrabindu (offsets 0x01/0x02) are nasalization marks
+    // that -- per standard Sanskrit/Hindi sandhi -- assimilate to a full
+    // nasal CONSONANT matching the place of articulation of whatever
+    // follows: ङ before velars, ञ before palatals, ण before retroflexes,
+    // न before dentals (and, by the repo owner's confirmed example,
+    // संस्कृति -> सनसकृति, also the default for sibilants/semivowels/ह --
+    // anything else letter-like), म before labials. Only dropped
+    // entirely at a true word boundary (not followed by a same-script
+    // letter at all -- space/punctuation/end/different script), matching
+    // xi38's postprocessing (its "N" collapses the same way on the
+    // romanized string, e.g. में -> "me" with no trace of the anusvara).
+    // u38 has no romanized string to regex over (the next letter is
+    // still native-script), so it's resolved here by peeking at the next
+    // codepoint's own offset directly, and emitting the NATIVE nasal
+    // letter (not a Latin one) to match u38's "letters stay native"
+    // design.
     if (offset == 0x01 || offset == 0x02) {
       const ScriptTable* nt = (i + 1 < cps.size()) ? table_for(cps[i + 1]) : nullptr;
-      if (!nt || nt != t) continue; // word boundary (space/punct/end/other script) -> drop
+      if (!nt || nt != t) continue; // word boundary -> drop
       int noffset = static_cast<int>(cps[i + 1]) - nt->base;
-      if (noffset >= 0x1A && noffset <= 0x1E) {
-        out += "N"; // velar (ka/kha/ga/gha/nga) -- keep as-is
-      } else if (noffset >= 0x34 && noffset <= 0x38) {
-        out += "m"; // labial (pa/pha/ba/bha/ma) -- assimilates
-      } else {
-        out += "n";
-      }
+      bool next_is_letter =
+          (noffset >= 0x04 && noffset <= 0x39) ||
+          (noffset >= 0x58 && noffset <= 0x61) ||
+          noffset == 0x7F;
+      if (!next_is_letter) continue; // not actually followed by a letter -> drop
+      int nasal_offset;
+      if (noffset >= 0x15 && noffset <= 0x19) nasal_offset = 0x19;      // velar -> ङ
+      else if (noffset >= 0x1A && noffset <= 0x1E) nasal_offset = 0x1E; // palatal -> ञ
+      else if (noffset >= 0x1F && noffset <= 0x23) nasal_offset = 0x23; // retroflex -> ण
+      else if (noffset >= 0x2A && noffset <= 0x2E) nasal_offset = 0x2E; // labial -> म
+      else nasal_offset = 0x28;                                        // dental + everything else -> न
+      utf8_append(out, static_cast<char32_t>(t->base + nasal_offset));
       continue;
     }
     bool is_letter =
