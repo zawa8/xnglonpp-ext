@@ -204,7 +204,8 @@ std::string to_u38(const std::string& utf8_input) {
   compose_nukta(cps);
 
   std::string out;
-  for (char32_t cp : cps) {
+  for (size_t i = 0; i < cps.size(); ++i) {
+    char32_t cp = cps[i];
     const ScriptTable* t = table_for(cp);
     if (!t || !t->iscii_aligned) {
       utf8_append(out, cp);
@@ -212,6 +213,29 @@ std::string to_u38(const std::string& utf8_input) {
     }
     int offset = static_cast<int>(cp) - t->base;
     if (offset == t->virama_offset) continue;
+    // Anusvara/candrabindu (offsets 0x01/0x02) are marks whose OWN xi38
+    // value ("N") only makes sense in context of what follows -- xi38's
+    // postprocessing (xnglo_india_post's N$/N(\W)/N(?![kKgG]) rules)
+    // handles this on the ROMANIZED string; u38 has no such string to
+    // regex over (the next letter is still native-script), so it's
+    // done here instead by peeking at the next codepoint directly:
+    // dropped at a word boundary, "N" before a velar consonant, "m"
+    // before a labial, "n" otherwise. Matches xi38's behavior on the
+    // repo owner's example (anusvara before a space vanishes; "n" for
+    // meN -> "n"/"" elsewhere).
+    if (offset == 0x01 || offset == 0x02) {
+      const ScriptTable* nt = (i + 1 < cps.size()) ? table_for(cps[i + 1]) : nullptr;
+      if (!nt || nt != t) continue; // word boundary (space/punct/end/other script) -> drop
+      int noffset = static_cast<int>(cps[i + 1]) - nt->base;
+      if (noffset >= 0x1A && noffset <= 0x1E) {
+        out += "N"; // velar (ka/kha/ga/gha/nga) -- keep as-is
+      } else if (noffset >= 0x34 && noffset <= 0x38) {
+        out += "m"; // labial (pa/pha/ba/bha/ma) -- assimilates
+      } else {
+        out += "n";
+      }
+      continue;
+    }
     bool is_letter =
         (offset >= 0x04 && offset <= 0x39) ||
         (offset >= 0x58 && offset <= 0x61) ||

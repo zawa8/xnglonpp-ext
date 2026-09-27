@@ -59,6 +59,10 @@ int main() {
   expect_eq("u38 gurmukhi(ਸਤ)", to_u38("ਸਤ"), "ਸਤ"); // no marks, letters untouched
   expect_eq("u38 sinhala passthrough(ආයුබෝවන්)", to_u38("ආයුබෝවන්"), "ආයුබෝවන්");
 
+  // anusvara/candrabindu context handling -- repo owner's reported bug:
+  // "N" was showing up literally where xi38 correctly drops/resolves it.
+  expect_eq("u38(में स्थित)", to_u38("में स्थित"), "मe सथiत");
+
   if (g_failures) {
     std::cerr << g_failures << " failure(s)\n";
     return 1;
