@@ -137,8 +137,17 @@ std::string apply_conjunct_specials(const std::string& utf8) {
   // execution charset and errors under /WX). This source file is UTF-8;
   // /utf-8 (or /source-charset:utf-8) must be passed to MSVC for these
   // literal bytes to be read correctly -- see the .vcxproj.
+  // [\b\s] (backspace-char-or-whitespace), NOT \W: std::regex's \W (like
+  // most regex engines without an explicit Unicode mode) only recognizes
+  // ASCII word characters, so it would treat EVERY devanagari byte as
+  // "non-word" too -- making this fire after ANY preceding devanagari
+  // letter, not just at a true word boundary. Confirmed bug report:
+  // अक्षुण्ण (अ + क्ष mid-word) wrongly simplified to "Asunn" instead of
+  // "Aksunn" because (\W)क्ष matched with अ as the "boundary". [\b\s]
+  // matches real htrlib's own TS source (u10_to_xi52.ts), which never
+  // had this bug.
   static const std::regex kshaWordStart("^क्ष");
-  static const std::regex kshaMid("(\\W)क्ष");
+  static const std::regex kshaMid("([\\b\\s])क्ष");
   static const std::regex gya("ज्ञ");
   std::string s = std::regex_replace(utf8, kshaWordStart, "s");
   s = std::regex_replace(s, kshaMid, "$1s");
